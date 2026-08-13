@@ -303,8 +303,27 @@ RUN cat > /app/start-frontend.sh <<'EOF'
 #!/bin/bash
 set -e
 
+BACKEND_PORT=${BACKEND_PORT:-8001}
 FRONTEND_PORT=${FRONTEND_PORT:-3782}
 FRONTEND_HOST=${FRONTEND_HOST:-0.0.0.0}
+
+# ── Wait for the backend to accept connections ──────────────────────
+echo "[Frontend] ⏳ Waiting for backend on 127.0.0.1:${BACKEND_PORT}..."
+MAX_WAIT=30
+ELAPSED=0
+while [ $ELAPSED -lt $MAX_WAIT ]; do
+    if curl -sf http://127.0.0.1:${BACKEND_PORT}/ > /dev/null 2>&1; then
+        echo "[Frontend] ✅ Backend is ready (waited ${ELAPSED}s)"
+        break
+    fi
+    sleep 1
+    ELAPSED=$((ELAPSED + 1))
+done
+if [ $ELAPSED -ge $MAX_WAIT ]; then
+    echo "[Frontend] ⚠️ Backend not reachable after ${MAX_WAIT}s — starting anyway"
+fi
+# ────────────────────────────────────────────────────────────────────
+
 echo "[Frontend] 🚀 Starting Next.js frontend on ${FRONTEND_HOST}:${FRONTEND_PORT}..."
 
 export PORT=${FRONTEND_PORT}
@@ -484,7 +503,7 @@ stderr_logfile_maxbytes=0
 environment=PYTHONPATH="/app",PYTHONUNBUFFERED="1"
 
 [program:frontend]
-command=/bin/bash -c "cd /app/web && node scripts/dev.mjs -H 0.0.0.0 -p ${FRONTEND_PORT:-3782}"
+command=/bin/bash -c "for i in \$(seq 1 30); do curl -sf http://127.0.0.1:\${BACKEND_PORT:-8001}/ > /dev/null 2>&1 && echo '[Frontend] ✅ Backend ready' && break; echo '[Frontend] ⏳ Waiting for backend...'; sleep 1; done; cd /app/web && node scripts/dev.mjs -H 0.0.0.0 -p ${FRONTEND_PORT:-3782}"
 directory=/app/web
 user=deeptutor
 autostart=true
